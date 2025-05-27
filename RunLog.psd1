@@ -29,7 +29,7 @@
 	CompanyName		       = ''
 	
 	# Copyright statement for this module
-	Copyright			   = '(c) 2025 aatur. All rights reserved.'
+	Copyright			   = '(c) 2025 aaturpin. All rights reserved.'
 	
 	# Description of the functionality provided by this module
 	Description		       = 'PowerShell logging module with class-based loggers and thread-safe file operations for use in PowerShell jobs and scripts.'
@@ -110,10 +110,10 @@
 			Tags		 = @('Logging', 'PowerShell', 'Jobs', 'Threading', 'Utilities')
 			
 			# A URL to the license for this module.
-			# LicenseUri = ''
+			LicenseUri = 'https://github.com/aturpin0504/RunLog-PowerShell?tab=MIT-1-ov-file'
 			
 			# A URL to the main website for this project.
-			# ProjectUri = ''
+			ProjectUri = 'https://github.com/aturpin0504/RunLog-PowerShell'
 			
 			# A URL to an icon representing this module.
 			# IconUri = ''
