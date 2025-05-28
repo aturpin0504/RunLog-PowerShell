@@ -1,4 +1,4 @@
-﻿# RunLog.psm1 - PowerShell Logging Module
+﻿# RunLog.psm1 - Simplified PowerShell Logging Module
 
 # Enum for log levels
 enum LogLevel {
@@ -45,82 +45,11 @@ class RunLogger {
 		return $level -ge $this.MinimumLogLevel
 	}
 	
-	# Debug logging
-	[void]Debug([string]$message)
+	# Core logging method - handles all the heavy lifting
+	hidden [void]WriteLogEntry([LogLevel]$level, [string]$message, [System.Exception]$exception = $null)
 	{
-		$this.Debug($message, $null)
-	}
-	
-	[void]Debug([string]$message, [System.Exception]$exception)
-	{
-		if ($this.ShouldLog([LogLevel]::Debug))
-		{
-			[LoggingService]::WriteLog($this.LogFilePath, [LogLevel]::Debug, $message, $exception)
-		}
-	}
-	
-	# Information logging
-	[void]Information([string]$message)
-	{
-		$this.Information($message, $null)
-	}
-	
-	[void]Information([string]$message, [System.Exception]$exception)
-	{
-		if ($this.ShouldLog([LogLevel]::Information))
-		{
-			[LoggingService]::WriteLog($this.LogFilePath, [LogLevel]::Information, $message, $exception)
-		}
-	}
-	
-	# Warning logging
-	[void]Warning([string]$message)
-	{
-		$this.Warning($message, $null)
-	}
-	
-	[void]Warning([string]$message, [System.Exception]$exception)
-	{
-		if ($this.ShouldLog([LogLevel]::Warning))
-		{
-			[LoggingService]::WriteLog($this.LogFilePath, [LogLevel]::Warning, $message, $exception)
-		}
-	}
-	
-	# Error logging
-	[void]Error([string]$message)
-	{
-		$this.Error($message, $null)
-	}
-	
-	[void]Error([string]$message, [System.Exception]$exception)
-	{
-		if ($this.ShouldLog([LogLevel]::Error))
-		{
-			[LoggingService]::WriteLog($this.LogFilePath, [LogLevel]::Error, $message, $exception)
-		}
-	}
-	
-	# Critical logging
-	[void]Critical([string]$message)
-	{
-		$this.Critical($message, $null)
-	}
-	
-	[void]Critical([string]$message, [System.Exception]$exception)
-	{
-		if ($this.ShouldLog([LogLevel]::Critical))
-		{
-			[LoggingService]::WriteLog($this.LogFilePath, [LogLevel]::Critical, $message, $exception)
-		}
-	}
-}
-
-# Logging Service Class - Handles actual file operations
-class LoggingService {
-	# Static method to write log entries
-	static [void]WriteLog([string]$logFilePath, [LogLevel]$level, [string]$message, [System.Exception]$exception)
-	{
+		if (-not $this.ShouldLog($level)) { return }
+		
 		$timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"
 		$processId = [System.Diagnostics.Process]::GetCurrentProcess().Id
 		$threadId = [System.Threading.Thread]::CurrentThread.ManagedThreadId
@@ -138,40 +67,49 @@ class LoggingService {
 			}
 		}
 		
-		# Write to file with retry logic
-		[LoggingService]::WriteToFileWithRetry($logFilePath, $logEntry)
-	}
-	
-	# Static method with retry logic for file operations
-	static [void]WriteToFileWithRetry([string]$filePath, [string]$content)
-	{
-		$maxRetries = 3
-		$retryDelay = 100 # milliseconds
+		# Simple retry with exponential backoff
+		$maxRetries = 5
+		$retryDelay = 50 # milliseconds
+		$mutex = $null
 		
 		for ($i = 0; $i -lt $maxRetries; $i++)
 		{
 			try
 			{
-				# Use .NET StreamWriter for better control and performance
-				$streamWriter = [System.IO.StreamWriter]::new($filePath, $true, [System.Text.Encoding]::UTF8)
-				try
+				# Use mutex for thread safety across processes
+				$mutexName = "RunLogger_" + ($this.LogFilePath -replace '[\\/:*?"<>|]', '_')
+				$mutex = [System.Threading.Mutex]::new($false, $mutexName)
+				
+				if ($mutex.WaitOne(1000))
 				{
-					$streamWriter.WriteLine($content)
-					$streamWriter.Flush()
-					return # Success, exit the method
+					# 1 second timeout
+					try
+					{
+						# Atomic write operation
+						[System.IO.File]::AppendAllText($this.LogFilePath, $logEntry + [Environment]::NewLine, [System.Text.Encoding]::UTF8)
+						return # Success
+					}
+					finally
+					{
+						$mutex.ReleaseMutex()
+					}
 				}
-				finally
+				else
 				{
-					$streamWriter.Close()
+					throw "Mutex timeout - file may be locked"
 				}
 			}
 			catch
 			{
 				if ($i -eq ($maxRetries - 1))
 				{
-					# Last retry failed, write to event log or console as fallback
-					Write-Warning "Failed to write to log file '$filePath' after $maxRetries attempts. Last error: $($_.Exception.Message)"
-					Write-Host "LOG FALLBACK: $content" -ForegroundColor Yellow
+					# Final fallback - write to console
+					Write-Host "[$timestamp] [CONSOLE-FALLBACK] [$level] $message" -ForegroundColor Yellow
+					if ($exception)
+					{
+						Write-Host "    Exception: $($exception.GetType().Name): $($exception.Message)" -ForegroundColor Red
+					}
+					return
 				}
 				else
 				{
@@ -179,14 +117,38 @@ class LoggingService {
 					$retryDelay *= 2 # Exponential backoff
 				}
 			}
+			finally
+			{
+				if ($mutex)
+				{
+					$mutex.Dispose()
+					$mutex = $null
+				}
+			}
 		}
 	}
+	
+	# Public logging methods
+	[void]Debug([string]$message) { $this.WriteLogEntry([LogLevel]::Debug, $message, $null) }
+	[void]Debug([string]$message, [System.Exception]$exception) { $this.WriteLogEntry([LogLevel]::Debug, $message, $exception) }
+	
+	[void]Information([string]$message) { $this.WriteLogEntry([LogLevel]::Information, $message, $null) }
+	[void]Information([string]$message, [System.Exception]$exception) { $this.WriteLogEntry([LogLevel]::Information, $message, $exception) }
+	
+	[void]Warning([string]$message) { $this.WriteLogEntry([LogLevel]::Warning, $message, $null) }
+	[void]Warning([string]$message, [System.Exception]$exception) { $this.WriteLogEntry([LogLevel]::Warning, $message, $exception) }
+	
+	[void]Error([string]$message) { $this.WriteLogEntry([LogLevel]::Error, $message, $null) }
+	[void]Error([string]$message, [System.Exception]$exception) { $this.WriteLogEntry([LogLevel]::Error, $message, $exception) }
+	
+	[void]Critical([string]$message) { $this.WriteLogEntry([LogLevel]::Critical, $message, $null) }
+	[void]Critical([string]$message, [System.Exception]$exception) { $this.WriteLogEntry([LogLevel]::Critical, $message, $exception) }
 }
 
-# Helper functions for convenience
+# Helper functions
 function New-RunLogger
 {
-	[CmdletBinding()]
+	[CmdletBinding(SupportsShouldProcess = $true)]
 	param (
 		[Parameter(Mandatory = $true)]
 		[string]$LogFilePath,
@@ -194,7 +156,10 @@ function New-RunLogger
 		[LogLevel]$MinimumLogLevel = [LogLevel]::Information
 	)
 	
-	return [RunLogger]::new($LogFilePath, $MinimumLogLevel)
+	if ($PSCmdlet.ShouldProcess("Creating logger with file path '$LogFilePath'"))
+	{
+		return [RunLogger]::new($LogFilePath, $MinimumLogLevel)
+	}
 }
 
 function Get-LogLevel
@@ -205,5 +170,5 @@ function Get-LogLevel
 	return [LogLevel].GetEnumNames()
 }
 
-# Export module members
-Export-ModuleMember -Function @('New-RunLogger', 'Get-LogLevel') -Cmdlet @()
+# Export functions
+Export-ModuleMember -Function @('New-RunLogger', 'Get-LogLevel')

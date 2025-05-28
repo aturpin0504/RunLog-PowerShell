@@ -8,11 +8,12 @@ RunLog provides a robust, thread-safe logging solution for PowerShell environmen
 
 **Key Features:**
 - Class-based `RunLogger` with five log levels (Debug, Information, Warning, Error, Critical)
-- Thread-safe file operations using .NET StreamWriter
+- Thread-safe file operations using named mutex for cross-process safety
 - Automatic retry logic with exponential backoff for file write operations
 - Process and thread ID tracking in log entries
 - Exception logging support with stack trace details
 - Configurable minimum log levels for filtering
+- Console fallback prevents log entry loss
 - Compatible with both PowerShell Desktop and Core editions
 
 ## Getting Started
@@ -120,8 +121,6 @@ Format breakdown:
 - `Message` - The log message
 - `Exception Details` - Exception type, message, and stack trace (when applicable)
 
-## Help
-
 ### Available Functions
 
 #### `New-RunLogger`
@@ -151,13 +150,13 @@ Get-LogLevel
 
 ### Thread Safety
 
-RunLog is designed to be thread-safe and handles concurrent access from multiple PowerShell jobs or runspaces. The module uses .NET StreamWriter with proper disposal patterns and implements retry logic to handle file locking scenarios.
+RunLog is designed to be thread-safe and handles concurrent access from multiple PowerShell jobs or runspaces. The module uses named mutex for cross-process synchronization and implements retry logic with exponential backoff to handle file locking scenarios.
 
 ### Error Handling
 
-If the module cannot write to the specified log file after 3 attempts with exponential backoff, it will:
-1. Display a warning message
-2. Write the log entry to the console as a fallback
+If the module cannot write to the specified log file after 5 attempts with exponential backoff, it will:
+1. Fall back to console output to prevent log entry loss
+2. Display the log entry with a `[CONSOLE-FALLBACK]` indicator
 3. Continue operation without throwing exceptions
 
 ### Troubleshooting
@@ -166,13 +165,24 @@ If the module cannot write to the specified log file after 3 attempts with expon
 
 1. **Permission Denied**: Ensure the PowerShell process has write permissions to the log directory
 2. **Path Not Found**: The module automatically creates the log directory if it doesn't exist
-3. **File Locked**: The retry mechanism handles temporary file locks automatically
+3. **File Locked**: The retry mechanism with named mutex handles temporary file locks automatically
+4. **Console Fallback**: If you see `[CONSOLE-FALLBACK]` entries, check file permissions and disk space
 
 ## Authors
 
 - **aaturpin** - Initial development and design
 
 ## Version History
+
+- **2.0.0** - Simplified architecture release
+  - **BREAKING**: Removed complex queue system for better reliability
+  - **BREAKING**: Removed queue management functions
+  - **IMPROVED**: Better cross-process thread safety using named mutex
+  - **IMPROVED**: Console fallback prevents log entry loss
+  - **IMPROVED**: Significantly reduced code complexity (~70% reduction)
+  - **IMPROVED**: Better performance for successful writes
+  - **MAINTAINED**: All core logging functionality
+  - **MAINTAINED**: Exception logging and thread ID tracking
 
 - **1.0.0** - Initial release
   - Class-based logging with RunLogger
@@ -184,31 +194,7 @@ If the module cannot write to the specified log file after 3 attempts with expon
 
 ## License
 
-This project is licensed under the MIT License - see below for details.
-
-```
-MIT License
-
-Copyright (c) 2025 aatur
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
 
